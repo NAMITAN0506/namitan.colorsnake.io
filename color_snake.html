@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Gradient Snake Evolution</title>
+    <style>
+        canvas {
+            border: 2px solid #333;
+            background: #000;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #gameOver {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        #restartBtn, #startBtn {
+            padding: 10px 20px;
+            font-size: 18px;
+            margin: 10px;
+            cursor: pointer;
+        }
+        #scoreBoard {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+        }
+        .history-score {
+            margin: 5px 0;
+        }
+        /* 广告容器样式 */
+        #adContainer {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 640px;
+            height: 360px;
+            background: #000;
+            z-index: 1000;
+            cursor: pointer;
+        }
+        #adVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        #skipAd {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            padding: 8px 16px;
+            background: rgba(255, 0, 0, 0.7);
+            color: white;
+            border: none;
+            cursor: pointer;
+            display: none;
+        }
+        #countdown {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 24px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        #noAdsMessage {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+        }
+
+        /* 新增样式 */
+        #startScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 1000;
+        }
+        #startScreen h2 {
+            font-size: 36px;
+            margin-bottom: 20px;
+        }
+        #startScreen button {
+            padding: 10px 20px;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        #tutorialAnimation {
+            position: relative;
+            width: 300px;
+            height: 200px;
+            margin: 20px auto;
+            border: 2px solid #fff;
+        }
+        #instructions {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 32px;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+    </style>
+</head>
+<body>
+    <h1>Colorful Gradient Snake</h1>
+    <button id="startBtn">Game Start</button>
+    <div id="scoreBoard">
+        <div>Score: <span id="currentScore">0</span></div>
+        <div>Best: <span id="bestScore">0</span></div>
+        <h3>History Scores:</h3>
+        <div id="historyScores"></div>
+    </div>
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+    <div id="gameOver">
+        <h2 style="font-size: 48px; margin: 10px;">GAME OVER</h2>
+        <p style="font-size: 24px;">Your Score: <span id="finalScore">0</span></p>
+        <button id="restartBtn">Play Again</button>
+    </div>
+
+    <!-- 游戏玩法提示 -->
+    <div id="instructions">
+        Connect color blocks matching the gradient! Use arrow keys to move.
+    </div>
+
+    <!-- 保持原有游戏结构不变 -->
+    <div id="adContainer">
+        <div id="countdown">3</div>
+        <video id="adVideo">
+            <!-- 视频源由 JavaScript 动态填充 -->
+        </video>
+        <button id="skipAd">Skip Ad</button>
+        <div id="noAdsMessage">No ads available</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const GRID_SIZE = 20;
+        const GRID_COUNT_X = canvas.width / GRID_SIZE;
+        const GRID_COUNT_Y = canvas.height / GRID_SIZE;
+
+        let snake = [];
+        let direction = null;
+        let colorBlocks = [];
+        let score = 0;
+        let hueStep = 10;
+        let gameInterval = null;
+        let isPlaying = false;
+        let bestScore = localStorage.getItem('bestScore') || 0;
+        let historyScores = JSON.parse(localStorage.getItem('historyScores')) || [];
+
+        // 初始化本地存储记录
+        document.getElementById('bestScore').textContent = bestScore;
+        updateHistoryDisplay();
+
+        function generateColorBlock() {
+            const baseHue = snake[0].h;
+            const validHue = (baseHue + hueStep) % 360;
+            return {
+                x: Math.floor(Math.random() * GRID_COUNT_X),
+                y: Math.floor(Math.random() * GRID_COUNT_Y),
+                h: validHue
+            };
+        }
+
+        function initGame() {
+            snake = [{x: 10, y: 10, h: Math.floor(Math.random() * 360)}];
+            colorBlocks = [];
+            score = 0;
+            direction = null;
+            document.getElementById('currentScore').textContent = '0';
+
+            for(let i = 0; i < 5; i++) {
+                colorBlocks.push(generateColorBlock());
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            colorBlocks.forEach(block => {
+                ctx.fillStyle = `hsl(${block.h}, 100%, 50%)`;
+                ctx.fillRect(block.x*GRID_SIZE, block.y*GRID_SIZE, GRID_SIZE-2, GRID_SIZE-2);
+            });
+
+            snake.forEach((segment, index) => {
+                const lightness = 50 - Math.min(index, 20);
+                ctx.fillStyle = `hsl(${segment.h}, 100%, ${lightness}%)`;
+                ctx.fillRect(segment.x*GRID_SIZE, segment.y*GRID_SIZE, GRID_SIZE-2, GRID_SIZE-2);
+            });
+        }
+
+        function checkCanMove(newHead) {
+            // 检查四个方向是否都可以移动
+            const directions = [
+                {x: newHead.x+1, y: newHead.y},
+                {x: newHead.x-1, y: newHead.y},
+                {x: newHead.x, y: newHead.y+1},
+                {x: newHead.x, y: newHead.y-1}
+            ];
+
+            return directions.some(pos => {
+                if(pos.x < 0 || pos.x >= GRID_COUNT_X ||
+                   pos.y < 0 || pos.y >= GRID_COUNT_Y) return false;
+
+                if(snake.some(s => s.x === pos.x && s.y === pos.y)) return false;
+
+                const block = colorBlocks.find(b => b.x === pos.x && b.y === pos.y);
+                if(block) return block.h === (newHead.h + hueStep) % 360;
+
+                return true;
+            });
+        }
+
+        function move() {
+            if(!direction) return;
+
+            const head = {...snake[0]};
+            switch(direction) {
+                case 'up': head.y--; break;
+                case 'down': head.y++; break;
+                case 'left': head.x--; break;
+                case 'right': head.x++; break;
+            }
+
+            // 边界阻挡
+            if(head.x < 0 || head.x >= GRID_COUNT_X ||
+               head.y < 0 || head.y >= GRID_COUNT_Y) {
+                return;
+            }
+
+            // 自身碰撞阻挡
+            if(snake.some(s => s.x === head.x && s.y === head.y)) {
+                return;
+            }
+
+            // 颜色块处理
+            const hitBlock = colorBlocks.find(b => b.x === head.x && b.y === head.y);
+            if(hitBlock) {
+                if(hitBlock.h === (snake[0].h + hueStep) % 360) {
+                    snake.unshift({...head, h: hitBlock.h});
+                    colorBlocks = colorBlocks.filter(b => b !== hitBlock);
+                    colorBlocks.push(generateColorBlock());
+
+                    // 新增有效性验证
+                    ensureValidBlock();
+
+                    score++;
+                    document.getElementById('currentScore').textContent = score;
+                } else {
+                    return;
+                }
+            } else {
+                snake.unshift(head);
+                snake.pop();
+            }
+
+            // 检查是否无法移动
+            if(!checkCanMove(snake[0])) {
+                gameOver();
+            }
+        }
+
+        function updateHistoryDisplay() {
+            const historyDiv = document.getElementById('historyScores');
+            historyDiv.innerHTML = historyScores
+                .slice(-5)
+                .map((s, i) => `<div class="history-score">${i+1}. ${s}</div>`)
+                .join('');
+        }
+
+        function gameOver() {
+            isPlaying = false;
+            clearInterval(gameInterval);
+            document.getElementById('gameOver').style.display = 'block';
+            document.getElementById('finalScore').textContent = score;
+
+            // 更新分数记录
+            historyScores.push(score);
+            if(score > bestScore) {
+                bestScore = score;
+                localStorage.setItem('bestScore', bestScore);
+                document.getElementById('bestScore').textContent = bestScore;
+            }
+            localStorage.setItem('historyScores', JSON.stringify(historyScores));
+            updateHistoryDisplay();
+        }
+
+        // 事件监听
+        document.addEventListener('keydown', (e) => {
+            if(!isPlaying) return;
+
+            switch(e.key) {
+                case 'ArrowUp': if(direction !== 'down') direction = 'up'; break;
+                case 'ArrowDown': if(direction !== 'up') direction = 'down'; break;
+                case 'ArrowLeft': if(direction !== 'right') direction = 'left'; break;
+                case 'ArrowRight': if(direction !== 'left') direction = 'right'; break;
+            }
+        });
+
+        document.getElementById('startBtn').addEventListener('click', () => {
+            isPlaying = true;
+            document.getElementById('startBtn').style.display = 'none';
+            document.getElementById('gameOver').style.display = 'none';
+            initGame();
+            gameInterval = setInterval(() => {
+                move();
+                draw();
+            }, 100);
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            showAd()
+            isPlaying = true;
+            document.getElementById('gameOver').style.display = 'none';
+            initGame();
+            gameInterval = setInterval(() => {
+                move();
+                draw();
+            }, 100);
+        });
+
+
+                // 保持原有变量声明不变
+
+        function generateColorBlock() {
+            const baseHue = snake[0].h;
+            const validHue = (baseHue + hueStep) % 360;
+
+            // 确保新生成的方块位置有效
+            let newBlock;
+            do {
+                newBlock = {
+                    x: Math.floor(Math.random() * GRID_COUNT_X),
+                    y: Math.floor(Math.random() * GRID_COUNT_Y),
+                    h: validHue
+                };
+            } while (isPositionOccupied(newBlock.x, newBlock.y));
+
+            return newBlock;
+        }
+
+        function isPositionOccupied(x, y) {
+            return snake.some(s => s.x === x && s.y === y) ||
+                   colorBlocks.some(b => b.x === x && b.y === y);
+        }
+
+        function ensureValidBlock() {
+            // 检查现有方块是否包含有效颜色
+            const currentTargetHue = (snake[0].h + hueStep) % 360;
+            const hasValidBlock = colorBlocks.some(b => b.h === currentTargetHue);
+
+            if (!hasValidBlock) {
+                // 替换最早生成的无效方块
+                const invalidIndex = colorBlocks.findIndex(b => b.h !== currentTargetHue);
+                if (invalidIndex !== -1) {
+                    colorBlocks[invalidIndex] = generateColorBlock();
+                }
+            }
+        }
+
+
+        // 保持其他函数不变
+
+
+
+
+
+
+
+        // 改进后的广告数据格式
+        const ads = [
+            {
+                src: 'ads/ad1.mp4',
+                type: 'video/mp4',
+                link: 'https://changeable1.com'
+            },
+            {
+                src: 'ads/ad2.mp4',
+                type: 'video/mp4',
+                link: 'https://changeable2.com'
+            },
+            {
+                src: 'ads/ad3.mp4',
+                type: 'video/mp4',
+                link: 'https://changeable3.com'
+            },
+            {
+                src: 'ads/ad4.mp4',
+                type: 'video/mp4',
+                link: 'https://changeable4.com'
+            },
+            // 添加更多广告...
+        ];
+
+        // 修改广告显示函数
+        function showAd() {
+            const adContainer = document.getElementById('adContainer');
+            const adVideo = document.getElementById('adVideo');
+            const skipBtn = document.getElementById('skipAd');
+            const countdown = document.getElementById('countdown');
+            const noAdsMsg = document.getElementById('noAdsMessage');
+
+            // 重置状态
+            adContainer.style.display = 'block';
+            skipBtn.style.display = 'none';
+            noAdsMsg.style.display = 'none';
+            countdown.textContent = '3';
+            countdown.style.display = 'block';
+
+            // 选择随机广告
+            const currentAd = ads[Math.floor(Math.random() * ads.length)];
+
+            // 设置广告链接
+            adContainer.dataset.adLink = currentAd.link;
+
+            // 动态设置视频源
+            adVideo.innerHTML = `<source src="${currentAd.src}" type="${currentAd.type}">`;
+            adVideo.load(); // 重新加载视频
+
+            // 检查广告可用性
+            fetch(currentAd.src)
+                .then(response => {
+                    if (!response.ok) throw new Error('Ad not found');
+
+                    // 配置视频
+                    adVideo.innerHTML = `<source src="${currentAd.src}" type="${currentAd.type}">`;
+                    adVideo.controls = false;
+
+                    // 强制视频播放
+                    const playPromise = adVideo.play();
+
+                    if (playPromise !== undefined) {
+                        playPromise.catch(error => {
+                            console.error('Autoplay failed:', error);
+                        });
+                    }
+
+                    // 倒计时处理
+                    let remaining = 3;
+                    const countdownInterval = setInterval(() => {
+                        remaining--;
+                        countdown.textContent = remaining;
+
+                        if(remaining <= 0) {
+                            clearInterval(countdownInterval);
+                            countdown.style.display = 'none';
+                            skipBtn.style.display = 'block';
+                        }
+                    }, 1000);
+
+                    // 跳过按钮事件
+                    skipBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        finishAd();
+                    };
+
+                    // 视频结束处理
+                    adVideo.onended = finishAd;
+                })
+                .catch(error => {
+                    noAdsMsg.style.display = 'block';
+                    adVideo.style.display = 'none';
+                    setTimeout(finishAd, 3000);
+                });
+
+            // 广告点击事件
+            adContainer.onclick = (e) => {
+                if (e.target !== skipBtn) {
+                    window.open(currentAd.link, '_blank');
+                }
+            };
+        }
+
+        // 修改startGameAfterAd函数
+
+
+        function finishAd() {
+            document.getElementById('adContainer').style.display = 'none';
+            const adVideo = document.getElementById('adVideo');
+            adVideo.pause();
+            adVideo.currentTime = 0;
+            startGameAfterAd();
+        }
+    </script>
+</body>
+</html>
